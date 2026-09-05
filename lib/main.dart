@@ -22,61 +22,124 @@ class SmartSpendApp extends StatelessWidget {
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
   final SmsListenerService smsService = SmsListenerService();
+
   List<RawSms> messages = [];
 
   Future<void> _runParserTest() async {
     final result = await ParserTestRunner().run();
 
     if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Parsed ${result.matched.length} / ${result.total}'),
+        title: Text(
+          'Parsed ${result.matched.length} / ${result.total}',
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 400,
           child: ListView(
             children: [
-              const Text('✅ MATCHED', style: TextStyle(fontWeight: FontWeight.bold)),
-              ...result.matched.map((m) => Text(m)),
+              const Text(
+                '✅ MATCHED',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              ...result.matched.map(
+                (m) => Text(m),
+              ),
+
               const SizedBox(height: 16),
-              const Text('❌ UNMATCHED', style: TextStyle(fontWeight: FontWeight.bold)),
-              ...result.unmatched.map((m) => Text(m, style: const TextStyle(fontSize: 12))),
+
+              const Text(
+                '⚠️ NEEDS REVIEW',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              ...result.needsReview.map(
+                (m) => Text(
+                  m,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              const Text(
+                '❌ INVALID',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              ...result.invalid.map(
+                (m) => Text(
+                  m,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              const Text(
+                '❓ UNMATCHED',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              ...result.unmatched.map(
+                (m) => Text(
+                  m,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
   }
 
   Future<void> _persistParsedTransactions() async {
-    final (inserted, duplicates) = await ParserTestRunner().runAndPersist();
+    final result = await ParserTestRunner().runAndPersist();
+
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Inserted: $inserted, Duplicates skipped: $duplicates')),
+      SnackBar(
+        content: Text(
+          'Inserted: ${result.inserted} | '
+          'Duplicates: ${result.duplicates} | '
+          'Invalid: ${result.invalid} | '
+          'Needs review: ${result.needsReview}',
+        ),
+      ),
     );
   }
 
   Future<void> _resolveMerchants() async {
-    final resolvedCount = await ParserTestRunner().resolveMerchantsForExisting();
+    final resolvedCount =
+        await ParserTestRunner().resolveMerchantsForExisting();
+
     if (!mounted) return;
 
     final database = await DatabaseHelper().database;
     final merchants = await database.query('merchants');
 
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Resolved: $resolvedCount, Distinct merchants: ${merchants.length}',
+          'Resolved: $resolvedCount, '
+          'Distinct merchants: ${merchants.length}',
         ),
       ),
     );
@@ -84,13 +147,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _viewMerchants() async {
     final database = await DatabaseHelper().database;
-    final merchants = await database.query('merchants', orderBy: 'canonical_name');
+
+    final merchants = await database.query(
+      'merchants',
+      orderBy: 'canonical_name',
+    );
 
     if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text('Merchants (${merchants.length})'),
+        title: Text(
+          'Merchants (${merchants.length})',
+        ),
         content: SizedBox(
           width: double.maxFinite,
           height: 500,
@@ -98,15 +168,23 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: merchants.length,
             itemBuilder: (context, i) {
               final m = merchants[i];
+
               return ListTile(
-                title: Text(m['canonical_name'] as String),
-                subtitle: Text(m['category'] as String),
+                title: Text(
+                  m['canonical_name'] as String,
+                ),
+                subtitle: Text(
+                  m['category'] as String,
+                ),
               );
             },
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
@@ -114,16 +192,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _init() async {
     final granted = await smsService.requestPermissions();
-    if (granted) {
-      smsService.startListening();
-      await smsService.importExistingInbox();
-      _refresh();
+
+    if (!granted) {
+      return;
     }
+
+    smsService.startListening();
+
+    await smsService.importExistingInbox();
+
+    if (!mounted) return;
+
+    await _refresh();
   }
 
   Future<void> _refresh() async {
     final all = await DatabaseHelper().getAllRawSms();
-    setState(() => messages = all);
+
+    if (!mounted) return;
+
+    setState(() {
+      messages = all;
+    });
   }
 
   @override
@@ -135,17 +225,22 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('SmartSpend — Raw SMS')),
+      appBar: AppBar(
+        title: const Text('SmartSpend — Raw SMS'),
+      ),
+
       body: ListView.builder(
         itemCount: messages.length,
         itemBuilder: (context, i) {
           final m = messages[i];
+
           return ListTile(
             title: Text(m.sender),
             subtitle: Text(m.body),
           );
         },
       ),
+
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -154,25 +249,33 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _viewMerchants,
             child: const Icon(Icons.visibility),
           ),
+
           const SizedBox(height: 12),
+
           FloatingActionButton(
             heroTag: 'resolve',
             onPressed: _resolveMerchants,
             child: const Icon(Icons.account_tree),
           ),
+
           const SizedBox(height: 12),
+
           FloatingActionButton(
             heroTag: 'persist',
             onPressed: _persistParsedTransactions,
             child: const Icon(Icons.save),
           ),
+
           const SizedBox(height: 12),
+
           FloatingActionButton(
             heroTag: 'parse',
             onPressed: _runParserTest,
             child: const Icon(Icons.science),
           ),
+
           const SizedBox(height: 12),
+
           FloatingActionButton(
             heroTag: 'refresh',
             onPressed: _refresh,
