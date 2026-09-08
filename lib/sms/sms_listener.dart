@@ -1,4 +1,5 @@
 import 'package:another_telephony/telephony.dart';
+
 import '../db/database_helper.dart';
 import '../models/raw_sms.dart';
 
@@ -14,31 +15,49 @@ class SmsListenerService {
   void startListening() {
     telephony.listenIncomingSms(
       onNewMessage: (SmsMessage message) async {
+        final receivedAt = message.date != null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                message.date!,
+              )
+            : DateTime.now();
+
         final raw = RawSms(
           sender: message.address ?? 'unknown',
           body: message.body ?? '',
-          receivedAt: DateTime.now(),
+          receivedAt: receivedAt,
         );
+
         await dbHelper.insertRawSms(raw);
       },
-      listenInBackground: false, // keep it foreground-only for now
+      listenInBackground: false,
     );
   }
 
-  // Useful for testing: pull existing inbox messages instead of waiting for a live SMS
+  /// Imports existing SMS messages from the device inbox.
+  ///
+  /// Android provides the actual SMS timestamp through SmsColumn.DATE,
+  /// so historical messages retain their original received date.
   Future<void> importExistingInbox() async {
     final messages = await telephony.getInboxSms(
-      columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+      columns: [
+        SmsColumn.ADDRESS,
+        SmsColumn.BODY,
+        SmsColumn.DATE,
+      ],
     );
-    for (final m in messages) {
+
+    for (final message in messages) {
       final raw = RawSms(
-        sender: m.address ?? 'unknown',
-        body: m.body ?? '',
-        receivedAt: m.date != null
-            ? DateTime.fromMillisecondsSinceEpoch(m.date!)
+        sender: message.address ?? 'unknown',
+        body: message.body ?? '',
+        receivedAt: message.date != null
+            ? DateTime.fromMillisecondsSinceEpoch(
+                message.date!,
+              )
             : DateTime.now(),
       );
-      await DatabaseHelper().insertRawSms(raw);
+
+      await dbHelper.insertRawSms(raw);
     }
   }
 }

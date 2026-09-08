@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'screens/dashboard_screen.dart';
 import 'sms/sms_listener.dart';
-import 'db/database_helper.dart';
-import 'models/raw_sms.dart';
 import 'parsers/parser_test_runner.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const SmartSpendApp());
 }
 
@@ -23,212 +23,170 @@ class SmartSpendApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const StartupScreen(),
     );
   }
 }
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class StartupScreen extends StatefulWidget {
+  const StartupScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<StartupScreen> createState() => _StartupScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final SmsListenerService smsService = SmsListenerService();
-
-  List<RawSms> messages = [];
-
-  bool isLoading = true;
-  String statusMessage = 'Loading SMS messages...';
+class _StartupScreenState extends State<StartupScreen> {
+  String status = 'Starting SmartSpend...';
+  String? error;
+  bool finished = false;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _initializeApp();
   }
 
-  Future<void> _init() async {
+  Future<void> _initializeApp() async {
     try {
+      final smsService = SmsListenerService();
+
+      // ------------------------------------------------------------
+      // 1. Request SMS permissions
+      // ------------------------------------------------------------
       setState(() {
-        isLoading = true;
-        statusMessage = 'Requesting SMS permission...';
+        status = 'Requesting SMS permission...';
       });
 
-      final granted = await smsService.requestPermissions();
+      final permissionGranted = await smsService.requestPermissions();
 
-      if (!granted) {
-        if (!mounted) return;
-
+      if (!permissionGranted) {
         setState(() {
-          isLoading = false;
-          statusMessage = 'SMS permission was not granted.';
+          error = 'SMS permission was not granted.';
+          status =
+              'SmartSpend needs SMS permission to import bank transactions.';
         });
-
         return;
       }
 
-      smsService.startListening();
-
-      if (!mounted) return;
-
+      // ------------------------------------------------------------
+      // 2. Import existing SMS inbox
+      // ------------------------------------------------------------
       setState(() {
-        statusMessage = 'Importing SMS messages...';
+        status = 'Importing existing SMS messages...';
       });
 
       await smsService.importExistingInbox();
 
-      if (!mounted) return;
-
+      // ------------------------------------------------------------
+      // 3. Parse and persist transactions
+      // ------------------------------------------------------------
       setState(() {
-        statusMessage = 'Parsing transactions...';
+        status = 'Parsing bank transactions...';
       });
 
       final parserRunner = ParserTestRunner();
 
       final persistResult = await parserRunner.runAndPersist();
 
-      if (!mounted) return;
-
+      // ------------------------------------------------------------
+      // 4. Resolve merchants
+      // ------------------------------------------------------------
       setState(() {
-        statusMessage =
-            'Saved ${persistResult.inserted} new transactions.';
+        status = 'Resolving merchants...';
       });
 
       await parserRunner.resolveMerchantsForExisting();
 
-      if (!mounted) return;
+      // ------------------------------------------------------------
+      // 5. Start listening for future SMS
+      // ------------------------------------------------------------
+      smsService.startListening();
 
-      await _refresh();
+      debugPrint(
+        'SmartSpend startup complete. '
+        'Inserted: ${persistResult.inserted}, '
+        'Duplicates: ${persistResult.duplicates}, '
+        'Invalid: ${persistResult.invalid}, '
+        'Needs review: ${persistResult.needsReview}',
+      );
 
       if (!mounted) return;
 
       setState(() {
-        isLoading = false;
-        statusMessage = 'Ready';
+        finished = true;
+        status = 'Ready';
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('SmartSpend startup error: $e');
+      debugPrint('$stackTrace');
+
       if (!mounted) return;
 
       setState(() {
-        isLoading = false;
-        statusMessage = 'Error: $e';
+        error = e.toString();
+        status = 'Startup failed';
       });
     }
   }
 
-  Future<void> _refresh() async {
-    final all = await DatabaseHelper().getAllRawSms();
-
-    if (!mounted) return;
-
-    setState(() {
-      messages = all;
-    });
-  }
-
-  Future<void> _manualSync() async {
-    await _init();
-  }
-
-  Future<void> _viewMerchants() async {
-    final database = await DatabaseHelper().database;
-
-    final merchants = await database.query(
-      'merchants',
-      orderBy: 'canonical_name',
-    );
-
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(
-          'Merchants (${merchants.length})',
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 500,
-          child: ListView.builder(
-            itemCount: merchants.length,
-            itemBuilder: (context, i) {
-              final merchant = merchants[i];
-
-              return ListTile(
-                title: Text(
-                  merchant['canonical_name'] as String,
-                ),
-                subtitle: Text(
-                  merchant['category'] as String,
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (finished) {
+      return const DashboardScreen();
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('SmartSpend'),
-        actions: [
-          IconButton(
-            tooltip: 'Sync SMS',
-            onPressed: isLoading ? null : _manualSync,
-            icon: const Icon(Icons.sync),
-          ),
-        ],
       ),
-      body: Column(
-        children: [
-          if (isLoading)
-            const LinearProgressIndicator(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (error == null)
+                const CircularProgressIndicator(),
 
-          if (statusMessage.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                statusMessage,
-                style: Theme.of(context).textTheme.bodySmall,
+              const SizedBox(height: 24),
+
+              Text(
+                status,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            ),
 
-          Expanded(
-            child: messages.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No SMS messages found.',
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: messages.length,
-                    itemBuilder: (context, i) {
-                      final message = messages[i];
+              if (error != null) ...[
+                const SizedBox(height: 16),
 
-                      return ListTile(
-                        title: Text(message.sender),
-                        subtitle: Text(message.body),
-                      );
-                    },
+                Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.red,
                   ),
+                ),
+
+                const SizedBox(height: 24),
+
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      error = null;
+                      finished = false;
+                    });
+
+                    _initializeApp();
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ],
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: isLoading ? null : _viewMerchants,
-        tooltip: 'View merchants',
-        child: const Icon(Icons.store),
+        ),
       ),
     );
   }

@@ -5,13 +5,14 @@ import 'hdfc_parser.dart';
 class ParserRegistry {
   final List<ParserInterface> parsers = [
     HdfcParser(),
-    // add more bank parsers here as you build them
+    // Add more bank parsers here as you build them.
   ];
 
   ParsedTransaction? parse({
     required int rawSmsId,
     required String sender,
     required String body,
+    required DateTime receivedAt,
   }) {
     for (final parser in parsers) {
       if (parser.matchesSender(sender)) {
@@ -19,11 +20,15 @@ class ParserRegistry {
           rawSmsId: rawSmsId,
           sender: sender,
           body: body,
+          receivedAt: receivedAt,
         );
-        if (result != null) return result;
+
+        if (result != null) {
+          return result;
+        }
       }
     }
-    return null; // no parser matched — this is either non-bank SMS,
-                 // or a bank we don't support yet, or a format drift case
+
+    return null;
   }
 }

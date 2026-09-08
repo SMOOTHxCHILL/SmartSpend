@@ -43,7 +43,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       totalSpent = spent;
       transactionCount = rows.length;
-      transactions = rows.take(20).toList();
+
+      // Show ALL transactions instead of only the first 20.
+      transactions = rows;
+
       loading = false;
     });
   }
@@ -146,9 +149,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                   const SizedBox(height: 28),
 
-                  const Text(
-                    'Recent Transactions',
-                    style: TextStyle(
+                  Text(
+                    'All Transactions ($transactionCount)',
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
@@ -175,7 +178,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             (transaction['amount'] as num).toDouble();
 
                         final merchant =
-                            transaction['raw_merchant'] as String? ?? 'Unknown';
+                            transaction['raw_merchant'] as String? ??
+                                'Unknown';
 
                         final isCredit = type == 'credit';
 
@@ -201,7 +205,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             trailing: Text(
                               '${isCredit ? '+' : '-'}'
                               '₹${amount.toStringAsFixed(2)}',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
                             ),

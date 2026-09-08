@@ -22,10 +22,13 @@ class ParserTestRunner {
         rawSmsId: sms.id ?? -1,
         sender: sms.sender,
         body: sms.body,
+        receivedAt: sms.receivedAt,
       );
 
       if (result == null) {
-        unmatched.add('[${sms.sender}] ${sms.body}');
+        unmatched.add(
+          '[${sms.sender}] ${sms.body}',
+        );
         continue;
       }
 
@@ -68,7 +71,7 @@ class ParserTestRunner {
   ///
   /// Invalid transactions are not stored.
   /// Transactions requiring review are currently stored, but counted
-  /// separately so we can handle them properly in a later iteration.
+  /// separately so they can be handled properly in a later iteration.
   Future<PersistResult> runAndPersist() async {
     final rawMessages = await DatabaseHelper().getAllRawSms();
 
@@ -82,6 +85,7 @@ class ParserTestRunner {
         rawSmsId: sms.id ?? -1,
         sender: sms.sender,
         body: sms.body,
+        receivedAt: sms.receivedAt,
       );
 
       if (result == null) {
@@ -96,7 +100,7 @@ class ParserTestRunner {
         continue;
       }
 
-      // Keep track of transactions that have low parser confidence.
+      // Keep track of low-confidence transactions.
       if (validation.status == ValidationStatus.needsReview) {
         needsReview++;
       }
@@ -164,8 +168,8 @@ class ParserTestResult {
     required this.total,
     required this.matched,
     required this.unmatched,
-    this.invalid = const [],
-    this.needsReview = const [],
+    required this.invalid,
+    required this.needsReview,
   });
 }
 
