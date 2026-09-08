@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'sms/sms_listener.dart';
 import 'db/database_helper.dart';
 import 'models/raw_sms.dart';
@@ -15,6 +16,13 @@ class SmartSpendApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SmartSpend',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+        ),
+        useMaterial3: true,
+      ),
       home: const HomeScreen(),
     );
   }
@@ -32,117 +40,96 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<RawSms> messages = [];
 
-  Future<void> _runParserTest() async {
-    final result = await ParserTestRunner().run();
+  bool isLoading = true;
+  String statusMessage = 'Loading SMS messages...';
 
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(
-          'Parsed ${result.matched.length} / ${result.total}',
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          height: 400,
-          child: ListView(
-            children: [
-              const Text(
-                '✅ MATCHED',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              ...result.matched.map(
-                (m) => Text(m),
-              ),
-
-              const SizedBox(height: 16),
-
-              const Text(
-                '⚠️ NEEDS REVIEW',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              ...result.needsReview.map(
-                (m) => Text(
-                  m,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              const Text(
-                '❌ INVALID',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              ...result.invalid.map(
-                (m) => Text(
-                  m,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              const Text(
-                '❓ UNMATCHED',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              ...result.unmatched.map(
-                (m) => Text(
-                  m,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _init();
   }
 
-  Future<void> _persistParsedTransactions() async {
-    final result = await ParserTestRunner().runAndPersist();
+  Future<void> _init() async {
+    try {
+      setState(() {
+        isLoading = true;
+        statusMessage = 'Requesting SMS permission...';
+      });
 
-    if (!mounted) return;
+      final granted = await smsService.requestPermissions();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Inserted: ${result.inserted} | '
-          'Duplicates: ${result.duplicates} | '
-          'Invalid: ${result.invalid} | '
-          'Needs review: ${result.needsReview}',
-        ),
-      ),
-    );
+      if (!granted) {
+        if (!mounted) return;
+
+        setState(() {
+          isLoading = false;
+          statusMessage = 'SMS permission was not granted.';
+        });
+
+        return;
+      }
+
+      smsService.startListening();
+
+      if (!mounted) return;
+
+      setState(() {
+        statusMessage = 'Importing SMS messages...';
+      });
+
+      await smsService.importExistingInbox();
+
+      if (!mounted) return;
+
+      setState(() {
+        statusMessage = 'Parsing transactions...';
+      });
+
+      final parserRunner = ParserTestRunner();
+
+      final persistResult = await parserRunner.runAndPersist();
+
+      if (!mounted) return;
+
+      setState(() {
+        statusMessage =
+            'Saved ${persistResult.inserted} new transactions.';
+      });
+
+      await parserRunner.resolveMerchantsForExisting();
+
+      if (!mounted) return;
+
+      await _refresh();
+
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+        statusMessage = 'Ready';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+        statusMessage = 'Error: $e';
+      });
+    }
   }
 
-  Future<void> _resolveMerchants() async {
-    final resolvedCount =
-        await ParserTestRunner().resolveMerchantsForExisting();
+  Future<void> _refresh() async {
+    final all = await DatabaseHelper().getAllRawSms();
 
     if (!mounted) return;
 
-    final database = await DatabaseHelper().database;
-    final merchants = await database.query('merchants');
+    setState(() {
+      messages = all;
+    });
+  }
 
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Resolved: $resolvedCount, '
-          'Distinct merchants: ${merchants.length}',
-        ),
-      ),
-    );
+  Future<void> _manualSync() async {
+    await _init();
   }
 
   Future<void> _viewMerchants() async {
@@ -167,14 +154,14 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListView.builder(
             itemCount: merchants.length,
             itemBuilder: (context, i) {
-              final m = merchants[i];
+              final merchant = merchants[i];
 
               return ListTile(
                 title: Text(
-                  m['canonical_name'] as String,
+                  merchant['canonical_name'] as String,
                 ),
                 subtitle: Text(
-                  m['category'] as String,
+                  merchant['category'] as String,
                 ),
               );
             },
@@ -190,98 +177,58 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _init() async {
-    final granted = await smsService.requestPermissions();
-
-    if (!granted) {
-      return;
-    }
-
-    smsService.startListening();
-
-    await smsService.importExistingInbox();
-
-    if (!mounted) return;
-
-    await _refresh();
-  }
-
-  Future<void> _refresh() async {
-    final all = await DatabaseHelper().getAllRawSms();
-
-    if (!mounted) return;
-
-    setState(() {
-      messages = all;
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SmartSpend — Raw SMS'),
-      ),
-
-      body: ListView.builder(
-        itemCount: messages.length,
-        itemBuilder: (context, i) {
-          final m = messages[i];
-
-          return ListTile(
-            title: Text(m.sender),
-            subtitle: Text(m.body),
-          );
-        },
-      ),
-
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'viewMerchants',
-            onPressed: _viewMerchants,
-            child: const Icon(Icons.visibility),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'resolve',
-            onPressed: _resolveMerchants,
-            child: const Icon(Icons.account_tree),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'persist',
-            onPressed: _persistParsedTransactions,
-            child: const Icon(Icons.save),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'parse',
-            onPressed: _runParserTest,
-            child: const Icon(Icons.science),
-          ),
-
-          const SizedBox(height: 12),
-
-          FloatingActionButton(
-            heroTag: 'refresh',
-            onPressed: _refresh,
-            child: const Icon(Icons.refresh),
+        title: const Text('SmartSpend'),
+        actions: [
+          IconButton(
+            tooltip: 'Sync SMS',
+            onPressed: isLoading ? null : _manualSync,
+            icon: const Icon(Icons.sync),
           ),
         ],
+      ),
+      body: Column(
+        children: [
+          if (isLoading)
+            const LinearProgressIndicator(),
+
+          if (statusMessage.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                statusMessage,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+
+          Expanded(
+            child: messages.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No SMS messages found.',
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: messages.length,
+                    itemBuilder: (context, i) {
+                      final message = messages[i];
+
+                      return ListTile(
+                        title: Text(message.sender),
+                        subtitle: Text(message.body),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: isLoading ? null : _viewMerchants,
+        tooltip: 'View merchants',
+        child: const Icon(Icons.store),
       ),
     );
   }

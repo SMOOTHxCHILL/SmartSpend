@@ -21,10 +21,12 @@ class RawSms {
 
   factory RawSms.fromMap(Map<String, dynamic> map) {
     return RawSms(
-      id: map['id'],
-      sender: map['sender'],
-      body: map['body'],
-      receivedAt: DateTime.fromMillisecondsSinceEpoch(map['received_at']),
+      id: map['id'] as int?,
+      sender: map['sender'] as String,
+      body: map['body'] as String,
+      receivedAt: DateTime.fromMillisecondsSinceEpoch(
+        map['received_at'] as int,
+      ),
     );
   }
 }
