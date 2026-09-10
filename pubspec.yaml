@@ -36,6 +36,8 @@ dependencies:
   path: ^1.9.0
   another_telephony: ^0.4.1
   permission_handler: ^11.3.0
+  flutter_onnxruntime: ^1.5.1
+  fl_chart: ^0.69.0
 
 dev_dependencies:
   flutter_test:
@@ -53,7 +55,10 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
+  assets:
+    - assets/ml/categorizer.onnx
+    - assets/ml/vectorizer.json
+    - assets/ml/label_encoder.json
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

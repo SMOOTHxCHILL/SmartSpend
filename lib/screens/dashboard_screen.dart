@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../db/database_helper.dart';
+import 'category_picker_sheet.dart';
+import 'insights_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -26,7 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       loading = true;
     });
 
-    final rows = await DatabaseHelper().getAllParsedTransactions();
+    final rows = await DatabaseHelper().getAllParsedTransactionsWithMerchant();
 
     double spent = 0;
 
@@ -43,12 +45,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       totalSpent = spent;
       transactionCount = rows.length;
-
-      // Show ALL transactions instead of only the first 20.
       transactions = rows;
-
       loading = false;
     });
+  }
+
+  Future<void> _correctCategory(Map<String, dynamic> transaction) async {
+    final merchantId = transaction['merchant_id'] as int?;
+
+    if (merchantId == null) {
+      // Merchant hasn't been resolved yet for this transaction — nothing
+      // to attach a category correction to.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Merchant not resolved yet for this transaction.')),
+      );
+      return;
+    }
+
+    final currentCategory = transaction['category'] as String? ?? 'Other';
+
+    final selected = await showCategoryPicker(
+      context,
+      currentCategory: currentCategory,
+    );
+
+    if (selected == null || selected == currentCategory) {
+      return;
+    }
+
+    await DatabaseHelper().updateMerchantCategory(merchantId, selected);
+    await _loadDashboard();
   }
 
   String _formatAmount(dynamic amount) {
@@ -72,6 +98,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('SmartSpend'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.insights),
+            tooltip: 'Insights',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const InsightsScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: loading
           ? const Center(
@@ -178,8 +215,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             (transaction['amount'] as num).toDouble();
 
                         final merchant =
-                            transaction['raw_merchant'] as String? ??
+                            transaction['merchant_name'] as String? ??
+                                transaction['raw_merchant'] as String? ??
                                 'Unknown';
+
+                        final category =
+                            transaction['category'] as String? ?? 'Other';
+
+                        final categorySource =
+                            transaction['category_source'] as String? ?? 'default';
 
                         final isCredit = type == 'credit';
 
@@ -197,10 +241,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            subtitle: Text(
-                              _formatDate(
-                                transaction['transaction_date'],
-                              ),
+                            subtitle: Row(
+                              children: [
+                                Text(_formatDate(transaction['transaction_date'])),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: categorySource == 'user_corrected'
+                                        ? Colors.deepPurple.withValues(alpha: 0.15)
+                                        : Colors.grey.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    category,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: categorySource == 'user_corrected'
+                                          ? Colors.deepPurple
+                                          : Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             trailing: Text(
                               '${isCredit ? '+' : '-'}'
@@ -209,6 +275,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            onTap: () => _correctCategory(transaction),
                           ),
                         );
                       },

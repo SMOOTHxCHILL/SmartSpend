@@ -137,9 +137,14 @@ class ParserTestRunner {
     int resolved = 0;
 
     for (final row in rows) {
+      final rawDate = row['transaction_date'] as int?;
+
       final merchantId = await resolver.resolve(
         row['raw_merchant'] as String,
         transactionType: row['type'] as String,
+        amount: (row['amount'] as num).toDouble(),
+        transactionDate:
+            rawDate != null ? DateTime.fromMillisecondsSinceEpoch(rawDate) : null,
       );
 
       await database.update(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 import 'sms/sms_listener.dart';
 import 'parsers/parser_test_runner.dart';
+import 'ml/ml_categorizer.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -89,7 +90,16 @@ class _StartupScreenState extends State<StartupScreen> {
       final persistResult = await parserRunner.runAndPersist();
 
       // ------------------------------------------------------------
-      // 4. Resolve merchants
+      // 4. Load the on-device ML categorizer
+      // ------------------------------------------------------------
+      setState(() {
+        status = 'Loading ML categorizer...';
+      });
+
+      await MlCategorizer().load();
+
+      // ------------------------------------------------------------
+      // 5. Resolve merchants
       // ------------------------------------------------------------
       setState(() {
         status = 'Resolving merchants...';
@@ -98,7 +108,7 @@ class _StartupScreenState extends State<StartupScreen> {
       await parserRunner.resolveMerchantsForExisting();
 
       // ------------------------------------------------------------
-      // 5. Start listening for future SMS
+      // 6. Start listening for future SMS
       // ------------------------------------------------------------
       smsService.startListening();
 
