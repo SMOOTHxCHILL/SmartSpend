@@ -34,6 +34,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   List<Map<String, dynamic>> categoryBreakdown = [];
   List<Map<String, dynamic>> monthlyTotals = [];
   double currentMonthTotal = 0;
+  double? projectedMonthTotal;
 
   @override
   void initState() {
@@ -59,12 +60,43 @@ class _InsightsScreenState extends State<InsightsScreen> {
       total += (row['total'] as num).toDouble();
     }
 
+    // --- Run-rate projection for the rest of this month ---
+    //
+    // Blends "pace so far this month" with "historical monthly average",
+    // weighted by how far through the month we are. Early in the month,
+    // one big purchase shouldn't make the pace projection swing wildly --
+    // lean on history. Late in the month, this month's actual pace is the
+    // more informative signal. This is a heuristic, not a trained model --
+    // there isn't enough history yet (see conversation) for Prophet/LSTM
+    // to be trustworthy. Revisit once 6+ months of real data exist.
+    final currentMonthKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final historicalMonths = monthly
+        .where((row) => row['month'] != currentMonthKey)
+        .map((row) => (row['total'] as num).toDouble())
+        .toList();
+
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final daysElapsed = now.day.clamp(1, daysInMonth);
+    final fractionOfMonth = daysElapsed / daysInMonth;
+
+    final paceProjection = total / daysElapsed * daysInMonth;
+    final historicalAvg = historicalMonths.isNotEmpty
+        ? historicalMonths.reduce((a, b) => a + b) / historicalMonths.length
+        : null;
+
+    final projection = historicalAvg == null
+        ? paceProjection
+        : (fractionOfMonth * paceProjection) +
+            ((1 - fractionOfMonth) * historicalAvg);
+
     if (!mounted) return;
 
     setState(() {
       categoryBreakdown = breakdown;
       monthlyTotals = monthly;
       currentMonthTotal = total;
+      projectedMonthTotal = projection;
       loading = false;
     });
   }
@@ -115,6 +147,46 @@ class _InsightsScreenState extends State<InsightsScreen> {
                       ),
                     ),
                   ),
+
+                  const SizedBox(height: 12),
+
+                  if (projectedMonthTotal != null)
+                    Card(
+                      color: Colors.deepPurple.withValues(alpha: 0.06),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.trending_up, size: 18, color: Colors.deepPurple),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Projected by month end',
+                                  style: TextStyle(fontSize: 14, color: Colors.deepPurple),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '₹${projectedMonthTotal!.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepPurple,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Based on spending pace this month blended with past months. '
+                              'Gets more accurate with more months of data.',
+                              style: TextStyle(fontSize: 11, color: Colors.black54),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   const SizedBox(height: 20),
 
