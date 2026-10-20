@@ -30,11 +30,27 @@ android {
         versionName = flutter.versionName
     }
 
+    // Release builds run "lint vital", which downloads extra check rules.
+    // When that download fails Gradle crashes with
+    // 'Cannot invoke "java.util.List.get(int)" because "path" is null'.
+    // Lint only gives warnings, so skip it for release builds.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // Keep rules for libraries whose native code finds Java classes
+            // by name (ONNX Runtime). See proguard-rules.pro.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

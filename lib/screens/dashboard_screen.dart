@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../config.dart';
 import '../db/database_helper.dart';
+import '../sync/cloud_sync.dart';
 import 'category_picker_sheet.dart';
 import 'insights_screen.dart';
+import '../sync/sync_actions.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -12,6 +16,9 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   bool loading = true;
+
+  /// The "open the website" card can be closed for this session.
+  bool websiteCardDismissed = false;
 
   double totalSpent = 0;
   int transactionCount = 0;
@@ -93,6 +100,90 @@ class _DashboardScreenState extends State<DashboardScreen> {
         '${date.year}';
   }
 
+  /// After a successful sync, points the user to the website, where the
+  /// full analysis (charts, reports, chat) lives.
+  Widget _websiteCard() {
+    return ValueListenableBuilder<SyncStatus>(
+      valueListenable: CloudSync.instance.status,
+      builder: (context, status, _) {
+        final synced = status.result != null && status.error == null && !status.running;
+        if (!synced || websiteCardDismissed) return const SizedBox.shrink();
+
+        final url = AppConfig.webBase;
+        final scheme = Theme.of(context).colorScheme;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 20),
+          color: scheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.cloud_done, color: scheme.onPrimaryContainer),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Synced to your account',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Hide',
+                      color: scheme.onPrimaryContainer,
+                      onPressed: () => setState(() => websiteCardDismissed = true),
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(
+                    'Your transactions are on the website now. Open it in your phone or '
+                    'PC browser to see charts, monthly reports and ask questions about '
+                    'your spending:',
+                    style: TextStyle(color: scheme.onPrimaryContainer),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        url,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy link'),
+                      onPressed: () async {
+                        await Clipboard.setData(ClipboardData(text: url));
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(content: Text('Link copied. Paste it into your browser.')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,6 +199,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               );
             },
           ),
+          const SyncButton(),
+          const AccountMenuButton(),
         ],
       ),
       body: loading
@@ -119,6 +212,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _websiteCard(),
                   const Text(
                     'Overview',
                     style: TextStyle(

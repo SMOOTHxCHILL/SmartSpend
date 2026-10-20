@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'auth/login_screen.dart';
+import 'config.dart';
 import 'screens/dashboard_screen.dart';
 import 'sms/sms_listener.dart';
+import 'sync/cloud_sync.dart';
 import 'parsers/parser_test_runner.dart';
 import 'ml/ml_categorizer.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (AppConfig.isConfigured) {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  }
+
   runApp(const SmartSpendApp());
 }
 
@@ -24,7 +36,51 @@ class SmartSpendApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const StartupScreen(),
+      home: AppConfig.isConfigured ? const AuthGate() : const MissingConfigScreen(),
+    );
+  }
+}
+
+/// Shows the login screen until there is a session, then the app.
+/// Logging out (from the account menu) brings the login screen back.
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = Supabase.instance.client.auth;
+
+    return StreamBuilder<AuthState>(
+      stream: auth.onAuthStateChange,
+      builder: (context, _) {
+        final session = auth.currentSession;
+        if (session == null) {
+          return const LoginScreen();
+        }
+        // Keyed by user so a different login restarts the pipeline
+        return StartupScreen(key: ValueKey(session.user.id));
+      },
+    );
+  }
+}
+
+class MissingConfigScreen extends StatelessWidget {
+  const MissingConfigScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'This build has no server settings.\n\n'
+            'Build with --dart-define-from-file=env.json '
+            '(see env.example.json).',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -119,6 +175,15 @@ class _StartupScreenState extends State<StartupScreen> {
         'Invalid: ${persistResult.invalid}, '
         'Needs review: ${persistResult.needsReview}',
       );
+
+      // ------------------------------------------------------------
+      // 7. Upload to the account in the background. A failure here is
+      //    shown on the dashboard's sync icon and never blocks the app.
+      // ------------------------------------------------------------
+      CloudSync.instance.syncAll().catchError((Object e) {
+        debugPrint('SmartSpend background sync failed: $e');
+        return SyncResult.empty;
+      });
 
       if (!mounted) return;
 

@@ -38,6 +38,8 @@ dependencies:
   permission_handler: ^11.3.0
   flutter_onnxruntime: ^1.5.1
   fl_chart: ^0.69.0
+  supabase_flutter: ^2.18.3
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

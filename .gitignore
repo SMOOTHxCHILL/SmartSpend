@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Build-time server settings (see env.example.json)
+env.json
+
+# Debug logs from phones (can contain SMS text)
+crash_log.txt
+*.log.txt
